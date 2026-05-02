@@ -1,0 +1,52 @@
+{
+  "name": "@loopyd/pi-archon",
+  "version": "0.1.0",
+  "description": "Archon workflow extension package for Pi coding agent",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./archon": "./src/archon.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "archon",
+    "workflow",
+    "agent"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/loopyd/pi-archon.git"
+  },
+  "homepage": "https://github.com/loopyd/pi-archon#readme",
+  "bugs": {
+    "url": "https://github.com/loopyd/pi-archon/issues"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.6.0"
+  },
+  "pi": {
+    "extensions": [
+      "./src/index.ts"
+    ]
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "npm run typecheck && npm pack --dry-run"
+  },
+  "dependencies": {
+    "typebox": "^1.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.3.0",
+    "typescript": "^5.9.2"
+  }
+}

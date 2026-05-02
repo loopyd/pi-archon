@@ -31,11 +31,15 @@ If you already like the original [Archon](https://github.com/coleam00/Archon) pr
 
 ## Table of Contents
 
+- [Table of Contents](#table-of-contents)
 - [What You Get](#what-you-get)
 - [Before You Install](#before-you-install)
 - [Install With Pi](#install-with-pi)
 - [Use It In Pi](#use-it-in-pi)
 - [Helpful Commands](#helpful-commands)
+  - [Workflow Commands](#workflow-commands)
+  - [Project Commands](#project-commands)
+  - [Server and Web Commands](#server-and-web-commands)
 - [Install From Another Source](#install-from-another-source)
 - [Good To Know](#good-to-know)
 - [License](#license)

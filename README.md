@@ -67,6 +67,7 @@ One-time npm setup:
    - GitHub owner: `loopyd`
    - Repository: `pi-archon`
    - Workflow filename: `publish.yml`
+   - Environment name: `npm-publish`
 3. Keep the GitHub repository public so npm can generate provenance automatically for trusted publishes.
 4. Keep the package scoped public. This repo sets public access in `package.json`, and the workflow publishes with public access.
 
@@ -77,7 +78,11 @@ npm version patch
 git push origin master --follow-tags
 ```
 
-Pushing a `v*` tag triggers `.github/workflows/publish.yml`, which runs the package checks and publishes with public access.
+Pushing a `v*` tag triggers `.github/workflows/publish.yml`, which runs the package checks and publishes with public access from the `npm-publish` GitHub environment.
+
+If the tagged version is already present on npm, the workflow skips the publish step so reruns can still verify the release path without failing on a duplicate version.
+
+If a publish fails, rerun the existing workflow run or dispatch `publish.yml` against the release tag ref so the same trusted publisher configuration is used.
 
 ## License
 

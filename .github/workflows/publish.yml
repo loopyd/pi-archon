@@ -13,6 +13,8 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    environment:
+      name: ${{ 'npm-publish' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -21,4 +23,16 @@ jobs:
           registry-url: https://registry.npmjs.org
       - run: npm install
       - run: npm test
-      - run: npm publish --access public
+      - id: package-version
+        run: |
+          package_name=$(npm pkg get name | tr -d '"')
+          package_version=$(npm pkg get version | tr -d '"')
+
+          if npm view "${package_name}@${package_version}" version >/dev/null 2>&1; then
+            echo "already_published=true" >> "$GITHUB_OUTPUT"
+            echo "${package_name}@${package_version} is already published; skipping npm publish."
+          else
+            echo "already_published=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.package-version.outputs.already_published == 'false'
+        run: npm publish --access public

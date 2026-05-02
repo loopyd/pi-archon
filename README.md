@@ -1,4 +1,4 @@
-# @loopyd/pi-archon
+# @saber7ooth/pi-archon
 
 Opinionated Archon workflow extension package for Pi.
 
@@ -15,7 +15,7 @@ pi install -l git:github.com/loopyd/pi-archon
 From npm after the package is published:
 
 ```bash
-pi install -l npm:@loopyd/pi-archon
+pi install -l npm:@saber7ooth/pi-archon
 ```
 
 ## Runtime Requirements
@@ -54,7 +54,7 @@ Pi package discovery is automatic once the package is published to npm because t
 
 - the `pi-package` keyword
 - a `pi.extensions` manifest
-- a public npm package name under `@loopyd/pi-archon`
+- a public npm package name under `@saber7ooth/pi-archon`
 
 There is no separate manual Pi package index submission step.
 
@@ -62,12 +62,13 @@ This repo is configured for npm trusted publishing from GitHub Actions.
 
 One-time npm setup:
 
-1. Create or claim the npm package `@loopyd/pi-archon`.
-2. In npm package settings, add a trusted publisher for:
+1. Create or claim the npm package `@saber7ooth/pi-archon` in the `@saber7ooth` npm organization.
+2. From the `@saber7ooth` org package settings on npm, add a trusted publisher for:
    - GitHub owner: `loopyd`
    - Repository: `pi-archon`
    - Workflow filename: `publish.yml`
-3. Keep the repository public so npm can generate provenance automatically.
+3. Keep the GitHub repository public so npm can generate provenance automatically for trusted publishes.
+4. Keep the package scoped public. This repo sets public access in `package.json`, and the workflow publishes with public access.
 
 Release flow:
 

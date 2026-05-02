@@ -1,5 +1,5 @@
 {
-  "name": "@loopyd/pi-archon",
+  "name": "@saber7ooth/pi-archon",
   "version": "0.1.0",
   "description": "Archon workflow extension package for Pi coding agent",
   "type": "module",

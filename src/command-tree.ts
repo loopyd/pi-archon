@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { ArchonCommand, isGroup } from "./command-base";
 import type { CommandNode, SubCommandMeta, CommandGroupMeta } from "./command-base";
-import { DEFAULT_QUERY, PREFERRED_WORKFLOW_IDS } from "./constants";
+import { DEFAULT_QUERY } from "./constants";
 import { createMessageEmitter, maybeString, normalizeError, normalizeString } from "./helpers";
 import { handleWorkflowCommand } from "./archon-workflow-cmd";
 import { handleArchonStatusCommand } from "./archon-routes";

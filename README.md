@@ -1,24 +1,36 @@
-# @saber7ooth/pi-archon
+<!-- markdownlint-disable MD033 MD041 -->
+<p align="center">
+    <a href="https://github.com/coleam00/Archon">
+        <img src="assets/logo.png" alt="Archon" height="84" />
+    </a>
+    <span>&nbsp;&nbsp;&nbsp;</span>
+    <a href="https://pi.dev">
+        <img src="assets/pi-logo.svg" alt="Pi" height="84" />
+    </a>
+</p>
 
-Opinionated Archon workflow extension package for Pi.
+<h1 align="center">pi-archon</h1>
 
-This package lifts a local Archon integration into a reusable Pi package. It registers:
+<p align="center">
+    <a href="https://github.com/loopyd/pi-archon/releases/latest">
+        <img src="https://img.shields.io/github/v/release/loopyd/pi-archon?style=for-the-badge&logo=github&label=release" alt="GitHub release" />
+    </a>
+    <a href="https://www.npmjs.com/package/@saber7ooth/pi-archon">
+        <img src="https://img.shields.io/npm/v/%40saber7ooth%2Fpi-archon?style=for-the-badge&logo=npm&label=npm" alt="npm version" />
+    </a>
+</p>
 
-- the `/archon` slash command with grouped subcommands and argument completion
-- a `POST /archon` route for host or RPC-driven integrations
-- Archon-specific message formatting for status and operational output
-- workflow, cleanup, server, and web helpers tuned for the author's Archon layout
+<p align="center">
+    Pi extension package for <a href="https://github.com/coleam00/Archon">coleam00/Archon</a>.
+</p>
+<!-- markdownlint-enable MD033 MD041 -->
 
-## What This Package Assumes
+This package lifts a local Archon integration into a reusable Pi package. It offers:
 
-This extension is intentionally opinionated around these Archon workflow ids:
-
-- `bof3-plan`
-- `bof3-implement`
-- `bof3-validate`
-- `bof3-piv`
-
-If your Archon checkout uses different workflow names, adjust the constants in `src/constants.ts` before publishing your own variant.
+- `/archon` slash command with grouped subcommands and argument completion.
+- A `POST /archon` route for host or RPC-driven integrations
+- Archon-specific message formatting for status and operational output.
+- workflow, cleanup, server, and web helpers tuned for the author's Archon layout.
 
 ## Pi Setup
 
@@ -190,7 +202,7 @@ Canonical grouped forms are also supported and are documented below.
 All workflow commands execute the equivalent Archon CLI call:
 
 ```bash
-archon workflow run <workflow-id> <query> --no-worktree --cwd <project>
+archon workflow run <workflow-name> <query> --no-worktree --cwd <project>
 ```
 
 or the Bun-based equivalent when `ARCHON_ROOT` points at an Archon checkout.

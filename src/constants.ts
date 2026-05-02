@@ -1,4 +1,4 @@
-import type { LogLevelConfig, WorkflowName } from "./types";
+import type { LogLevelConfig } from "./types";
 
 export const ARCHON_ROOT = process.env.ARCHON_ROOT?.trim() || "/opt/archon";
 export const ARCHON_DEFAULT_HOME = `${process.env.HOME || process.cwd()}/.archon`;
@@ -7,13 +7,6 @@ export const EXEC_TIMEOUT_MS = 15 * 60 * 1000;
 export const PROGRESS_UPDATE_MS = 1200;
 export const DEFAULT_QUERY = "decompile the next function";
 export const WORKFLOWS = ["plan", "implement", "validate", "piv"] as const;
-export const PREFERRED_WORKFLOW_IDS: Record<WorkflowName, string> = {
-  plan: "bof3-plan",
-  implement: "bof3-implement",
-  validate: "bof3-validate",
-  piv: "bof3-piv",
-};
-
 
 export const SKIP_KEYS = new Set(["level", "time", "pid", "hostname", "module", "msg", "err", "stack"]);
 export const STEP_PATTERNS = {

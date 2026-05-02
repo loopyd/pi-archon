@@ -1,7 +1,7 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
 import { Type } from "typebox";
 import * as fs from "node:fs";
-import { ARCHON_ROOT, DEFAULT_QUERY, PREFERRED_WORKFLOW_IDS } from "./constants";
+import { ARCHON_ROOT, DEFAULT_QUERY } from "./constants";
 import type { WorkflowName } from "./types";
 import { createMessageEmitter, normalizeString } from "./helpers";
 import { redactSecrets, safeCode } from "./output-filter";
@@ -79,11 +79,10 @@ export function registerArchonTools(pi: ExtensionAPI): void {
 
 async function invokeWorkflowTool(api: ExtensionAPI, workflow: WorkflowName, query: string, cwd: string) {
   const startedAt = Date.now();
-  const workflowId = PREFERRED_WORKFLOW_IDS[workflow] ?? workflow;
   const resolvedQuery = maybeString(query) || DEFAULT_QUERY;
   let result;
   try {
-    result = await runArchonCommand(api, ["workflow", "run", workflowId, resolvedQuery, "--no-worktree"], cwd);
+    result = await runArchonCommand(api, ["workflow", "run", workflow, resolvedQuery, "--no-worktree"], cwd);
   } catch { result = { command: "", stdout: "", stderr: "failed", exitCode: 1 }; }
   return formatArchonToolResult(`${workflow.toUpperCase()} — ${redactSecrets(resolvedQuery)}`, result, { workflow, command: "tool_workflow_run", durationMs: Date.now() - startedAt }, Date.now() - startedAt);
 }

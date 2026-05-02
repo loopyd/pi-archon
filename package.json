@@ -1,6 +1,6 @@
 {
   "name": "@saber7ooth/pi-archon",
-  "version": "0.0.2",
+  "version": "0.0.3",
   "description": "Archon workflow extension package for Pi coding agent",
   "type": "module",
   "main": "./src/index.ts",
@@ -9,7 +9,8 @@
     "./archon": "./src/archon.ts"
   },
   "files": [
-    "src"
+    "src",
+    "assets"
   ],
   "keywords": [
     "pi-package",
@@ -33,7 +34,8 @@
   "pi": {
     "extensions": [
       "./src/index.ts"
-    ]
+    ],
+    "image": "./assets/logo.png"
   },
   "publishConfig": {
     "access": "public"

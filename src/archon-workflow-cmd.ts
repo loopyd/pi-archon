@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { DEFAULT_QUERY, PREFERRED_WORKFLOW_IDS, PROGRESS_UPDATE_MS } from "./constants";
+import { DEFAULT_QUERY, PROGRESS_UPDATE_MS } from "./constants";
 import type { ArchonRunResult, CommandWorkflowOutcome, WorkflowName } from "./types";
 import { createMessageEmitter, formatElapsed, normalizeError, normalizeString } from "./helpers";
 import { redactSecrets, safeCode, LogEvent } from "./output-filter";
@@ -23,8 +23,7 @@ async function runArchonWorkflow(
   projectCwd: string,
   signal?: AbortSignal
 ): Promise<ArchonRunResult> {
-  const workflowId = PREFERRED_WORKFLOW_IDS[workflow] ?? workflow;
-  return runArchonCommand(pi, ["workflow", "run", workflowId, query.trim(), "--no-worktree"], projectCwd, signal);
+  return runArchonCommand(pi, ["workflow", "run", workflow, query.trim(), "--no-worktree"], projectCwd, signal);
 }
 
 async function runArchonWorkflowStreaming(
@@ -34,8 +33,7 @@ async function runArchonWorkflowStreaming(
   signal: AbortSignal | undefined,
   onLine?: (line: string, isErr: boolean) => void
 ): Promise<ArchonRunResult> {
-  const workflowId = PREFERRED_WORKFLOW_IDS[workflow] ?? workflow;
-  return runArchonCommandStreaming(["workflow", "run", workflowId, query.trim(), "--no-worktree"], projectCwd, signal, onLine);
+  return runArchonCommandStreaming(["workflow", "run", workflow, query.trim(), "--no-worktree"], projectCwd, signal, onLine);
 }
 
 // ─── Command-context runner with TUI box ──────────────────

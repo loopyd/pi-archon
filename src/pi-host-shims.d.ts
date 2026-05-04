@@ -26,6 +26,12 @@ declare module "@mariozechner/pi-coding-agent" {
 }
 
 declare module "@mariozechner/pi-tui" {
+  export interface Component {
+    render?(width: number, height: number): string[];
+    handleInput?(data: string): Promise<boolean> | boolean;
+    cursor?(): { x: number; y: number } | null;
+  }
+
   export class Container {
     addChild(...args: any[]): void;
   }

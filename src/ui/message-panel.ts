@@ -1,5 +1,5 @@
 import { truncateToWidth, visibleWidth } from "@mariozechner/pi-tui";
-import type { Component } from "@mariozechner/pi-tui/dist/tui.js";
+import type { Component } from "@mariozechner/pi-tui";
 import { ARCHON_PILL_DEFAULT, ARCHON_THEME_RGB, PANEL_GUTTER, PANEL_SIDE_PAD } from "../constants";
 import type { ArchonMessageDetails, MessagePanelLine } from "../types";
 import { fire } from "./rgb";

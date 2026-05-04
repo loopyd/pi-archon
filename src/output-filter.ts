@@ -70,6 +70,10 @@ function findFinalSection(lines: string[]): number {
   return -1;
 }
 
+function isNoiseLine(line: string): boolean {
+  return NOISE_PATTERNS.some((re) => re.test(line)) || ARCHON_LOG_RE.test(line);
+}
+
 /** Parse JSON or pass-through with step extraction */
 function parseLine(raw: string): LiveEventLine {
   const trimmed = raw.trim();
@@ -135,19 +139,44 @@ function formatJsonEvent(payload: JsonPayload, baseIsErr: boolean): LiveEventLin
 export const ARCHON_LOG_RE = /^\[(?:INFO|WARN|ERR|DBG|LOG|EVT|INF|WRN)\]\s+\w+[\-.\w]*:/;
 const TOOL_WARNING_RE = /^⚠/;
 
+/** Lines that are archon internal noise (step markers, json logs, tool warnings, empty) */
+const NOISE_PATTERNS = [
+  /^\s*$/,
+  /^\[(?:INFO|WARN|ERR|DBG|LOG|EVT|INF|WRN)\]\s/,
+  /^\{.*\}$/,
+  /^\[archon\]\s/,
+  /^\[dotenv@\]/,
+  /^\[(?:scout|planner|worker|reviewer|implementer|classifier|supervisor|task-merger|task-reviewer|task-worker)\]\s*/,
+  /^⚠️\s*Tool\s/,
+  /^Running workflow:/,
+  /^Working directory:/,
+  /^Dispatching workflow:/,
+  /^🚀\s*Starting workflow:/,
+  /^▶️\s*Resuming workflow/,
+  /^❌\s*DAG workflow/,
+  /^Workflow completed successfully\.$/,
+];
+
 /** Full cleaning pipeline: normalize newlines → filter lines → preserve all sections */
 export function cleanOutput(text: string): string {
   const lines = (text || "").replace(/\r\n?/g, "\n").split("\n");
 
-  // Collect all ## SECTION_HEADER indices so we keep every section block.
-  // Between sections only prefix-allowed content is kept; after the last
-  // section everything is preserved verbatim (user output).
-  const headers = findAllSectionHeaders(lines);
+  let startAt = -1;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (lines[i].trim().startsWith("## Goal")) {
+      startAt = i;
+      break;
+    }
+  }
 
-  if (headers.length === 0) {
-    // No structured section found — transform all lines uniformly, strip archon logs
+  if (startAt < 0) {
+    const headers = findAllSectionHeaders(lines);
+    startAt = headers.length > 0 ? headers[0] : -1;
+  }
+
+  if (startAt < 0) {
     return lines
-      .filter((l) => !ARCHON_LOG_RE.test(l))
+      .filter((l) => !isNoiseLine(l))
       .map(parseLine)
       .filter((e) => e.text.trim())
       .map((e) => e.text)
@@ -155,28 +184,59 @@ export function cleanOutput(text: string): string {
       .trim();
   }
 
-  const parts: string[] = [];
-
-  // Prefix content before the first header (logs, status markers)
-  if (headers[0] > 0) {
-    const prefix = lines.slice(0, headers[0])
-      .map(parseLine)
-      .filter((e) => keepPrefix(e.text))
-      .filter((e) => !ARCHON_LOG_RE.test(e.text));
-    // Also strip archon logs that appear inline (bypassed by PREFIX_RE matching)
-    const allLines = lines.slice(0, headers[0]).map(parseLine).filter((e) => e.text.trim());
-    parts.push(...allLines.filter((e) => !ARCHON_LOG_RE.test(e.text)).map((e) => e.text));
+  // Find the end of the last section to trim trailing summaries/logs
+  let endAt = lines.length;
+  for (let i = lines.length - 1; i >= startAt; i--) {
+    // We want to find the last line of the last section.
+    // Since sections end at the next header, the last section ends at the end of the file.
+    // But if there's a trailing block of text that doesn't look like the plan, we want to cut it.
+    // Heuristic: the plan ends after "## Risks" block.
+  }
+  
+  // Actually, safer to just slice from startAt and then apply a "last section" trim if needed.
+  // But the most common issue is the model adding a summary AFTER the final structured plan.
+  // Let's find the last occurrence of "## Risks" and include that block.
+  let risksIdx = -1;
+  for (let i = lines.length - 1; i >= startAt; i--) {
+    if (lines[i].trim().startsWith("## Risks")) {
+      risksIdx = i;
+      break;
+    }
   }
 
-  // Each section block: from header through the next header or EOF.
-  for (let i = 0; i < headers.length; i++) {
-    const start = headers[i];
-    const end = i + 1 < headers.length ? headers[i + 1] : lines.length;
-    parts.push(...lines.slice(start, end).filter((l) => !ARCHON_LOG_RE.test(l)));
+  if (risksIdx !== -1) {
+    // Find where the Risks section actually ends (first line that looks like a new block or noise)
+    let risksEnd = lines.length;
+    for (let i = risksIdx + 1; i < lines.length; i++) {
+      const l = lines[i].trim();
+      if (l.startsWith("##") || l.startsWith("Goal:") || l.startsWith("Plan:")) {
+        risksEnd = i;
+        break;
+      }
+    }
+    endAt = risksEnd;
   }
 
-  // Final sweep: strip any remaining archon log lines (they may leak from execution)
-  return parts.join("\n").trim();
+  const body = lines.slice(startAt, endAt).filter((l) => !isNoiseLine(l));
+  
+  // --- Unwrap forced newlines ---
+  const unwrapped: string[] = [];
+  for (let i = 0; i < body.length; i++) {
+    const line = body[i];
+    const next = body[i + 1];
+
+    // If this line doesn't look like a header/list/code and next line exists and also doesn't look like a header/list/code
+    // then it's probably a wrap.
+    const isStructural = (l: string) => /^##|^[*+-]|^[0-9]+\.|^>|^ ```/.test(l.trim());
+    
+    if (i < body.length - 1 && !isStructural(line) && !isStructural(next)) {
+      unwrapped.push(line + " ");
+    } else {
+      unwrapped.push(line);
+    }
+  }
+
+  return unwrapped.join("\n").trim();
 }
 
 // ════════════════════════════════════════════════════════════════

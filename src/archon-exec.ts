@@ -71,12 +71,8 @@ async function execCore(
     };
 
     const pump = (chunk: string, isErr: boolean) => {
-      // Flush any pending carry from the previous chunk so partial tokens
-      // appear progressively instead of waiting for a trailing newline.
-      if (isErr && errCarry) { flushLine(errCarry, true); errCarry = ""; }
-      if (!isErr && outCarry) { flushLine(outCarry, false); outCarry = ""; }
-
-      const combined = chunk.replace(/\r\n?/g, "\n");
+      const priorCarry = isErr ? errCarry : outCarry;
+      const combined = `${priorCarry}${chunk.replace(/\r\n?/g, "\n")}`;
       const parts = combined.split("\n");
       const nextCarry = parts.pop() ?? "";
       for (const line of parts) flushLine(line, isErr);
@@ -204,21 +200,15 @@ export async function runArchonCommandWithToolUpdates(
 
 export function formatArchonOutput(title: string, run: ArchonRunResult, durationMs?: number): string {
   const out = truncateOutputBlock(run.stdout, "stdout");
-  const err = truncateOutputBlock(run.stderr, "stderr");
   const status = run.exitCode === 0 ? "✅ success" : "❌ failed";
 
   let md = `## Archon ${title}\n\n`;
-  md += `- **Runner:** \`${redactSecrets(run.command)}\`\n`;
   md += `- **Result:** ${status} (exit \`${String(run.exitCode)}\`)\n`;
   if (typeof durationMs === "number") {
     md += `- **Duration:** \`${formatElapsed(Math.floor(durationMs / 1000))}\`\n`;
   }
   md += "\n### Output\n\n```text\n";
   md += safeCode(out) + "\n```\n";
-  if (err !== "(no stderr)") {
-    md += "\n### stderr\n\n```text\n";
-    md += safeCode(err) + "\n```\n";
-  }
   return md;
 }
 

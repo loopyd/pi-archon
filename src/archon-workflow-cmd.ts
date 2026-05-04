@@ -1,17 +1,16 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-coding-agent";
-import { DEFAULT_QUERY, PROGRESS_UPDATE_MS } from "./constants";
-import type { ArchonRunResult, CommandWorkflowOutcome, WorkflowName } from "./types";
-import { createMessageEmitter, formatElapsed, normalizeError, normalizeString } from "./helpers";
+import { ARCHON_PILL_DEFAULT, DEFAULT_QUERY, PROGRESS_UPDATE_MS } from "./constants";
+import type { ArchonRunResult, ArchonToolUpdate, CommandWorkflowOutcome, WorkflowName } from "./types";
+import { emitArchonMessage, formatElapsed, normalizeError, normalizeString, toPillLabel } from "./helpers";
 import { redactSecrets, safeCode, LogEvent } from "./output-filter";
-import { ProgressBox } from "./ui-progress-box";
+import { ProgressBox } from "./ui/progress-box";
+import { cancelArchonWorkflowRun, findActiveWorkflowRunId } from "./handlers/manage-runtime";
 import { runArchonCommand, runArchonCommandStreaming, formatArchonOutput, formatArchonToolResult } from "./archon-exec";
-
-const emitPlan = createMessageEmitter("plannator");
 
 // ─── Error output formatting ──────────────────────────────
 
 export function formatCommandErrorOutput(workflow: WorkflowName, query: string, error: string): string {
-  return `## Plannator ${workflow.toUpperCase()} — ${redactSecrets(query)}\n\n- **Result:** ❌ failed before completion\n\n\`\`\`text\n${safeCode(error)}\n\`\`\`\n`;
+  return `## Archon ${workflow.toUpperCase()} — ${redactSecrets(query)}\n\n- **Result:** ❌ failed before completion\n\n\`\`\`text\n${safeCode(error)}\n\`\`\`\n`;
 }
 
 // ─── Direct workflow execution ──────────────────────────────
@@ -56,13 +55,7 @@ async function runWorkflowForCommand(
     const startedAt = Date.now();
     const controller = new AbortController();
     let finished = false;
-
-    const box = new ProgressBox({
-      mode: "stream", tui, theme, title: `plannator ${workflow}`,
-      onAbort: () => { controller.abort(); finish({ cancelled: true, durationMs: Date.now() - startedAt }); },
-      maxLines: 6,
-      lineParser: (line: string, isErr: boolean) => LogEvent.parse(redactSecrets(line), isErr),
-    });
+    let cancelling = false;
 
     const finish = (value: CommandWorkflowOutcome) => {
       if (finished) return;
@@ -70,6 +63,28 @@ async function runWorkflowForCommand(
       box.stop();
       done(value);
     };
+
+    const box = new ProgressBox({
+      mode: "stream", tui, theme, title: `${ARCHON_PILL_DEFAULT.toLowerCase()} ${workflow}`, pill: toPillLabel(workflow),
+      onAbort: () => {
+        if (cancelling || finished) return;
+        cancelling = true;
+        box.appendLine(`Cancelling workflow '${workflow}'...`, false);
+        void (async () => {
+          try {
+            const runId = await findActiveWorkflowRunId(pi, cwd, workflow);
+            if (runId) await cancelArchonWorkflowRun(pi, runId, cwd);
+          } catch (error) {
+            box.appendLine(`Cancel request failed: ${normalizeError(error)}`, true);
+          } finally {
+            controller.abort();
+            finish({ cancelled: true, durationMs: Date.now() - startedAt });
+          }
+        })();
+      },
+      maxLines: 6,
+      lineParser: (line: string, isErr: boolean) => LogEvent.parse(redactSecrets(line), isErr),
+    });
 
     runArchonWorkflowStreaming(workflow, query, cwd, controller.signal, (line, isErr) => box.appendLine(line, isErr))
       .then((run) => {
@@ -97,7 +112,7 @@ export async function runWorkflowWithToolUpdates(
   query: string,
   cwd: string,
   signal: AbortSignal | undefined,
-  onUpdate?: (update: any) => void
+  onUpdate?: (update: ArchonToolUpdate) => void
 ): Promise<{ run: ArchonRunResult; durationMs: number }> {
   const startedAt = Date.now();
   const preview = query.length > 72 ? `${query.slice(0, 72)}...` : query;
@@ -122,7 +137,7 @@ export async function runWorkflowWithToolUpdates(
   } finally { clearInterval(interval); }
 }
 
-// ─── CLI command handler for plannator workflows ──────────
+// ─── CLI command handler for workflow runs ──────────
 
 export async function handleWorkflowCommand(
   pi: ExtensionAPI,
@@ -136,8 +151,7 @@ export async function handleWorkflowCommand(
     const outcome = await runWorkflowForCommand(pi, workflow, query, ctx);
 
     if (outcome.cancelled) {
-      emitPlan(pi, `## Plannator ${workflow.toUpperCase()} — ${redactSecrets(query)}\n\n- **Result:** ⚠️ cancelled by user\n`, { workflow, query, cancelled: true, durationMs: outcome.durationMs });
-      ctx.ui.notify(`Plannator ${workflow} cancelled.`, "warning");
+      emitArchonMessage(pi, `## Archon ${workflow.toUpperCase()} — ${redactSecrets(query)}\n\n- **Result:** ⚠️ cancelled by user\n`, { workflow, query, cancelled: true, durationMs: outcome.durationMs, pill: toPillLabel(workflow) });
       return;
     }
 
@@ -148,14 +162,14 @@ export async function handleWorkflowCommand(
       .split('\n')
       .filter(l => !/^\[(?:INF|WRN)\] /m.test(l))
       .join('\n');
-    emitPlan(pi, cleaned, {
-      workflow, query, exitCode: outcome.run.exitCode, command: outcome.run.command, durationMs: outcome.durationMs,
+    emitArchonMessage(pi, cleaned, {
+      workflow, query, exitCode: outcome.run.exitCode, command: outcome.run.command, durationMs: outcome.durationMs, pill: toPillLabel(workflow),
     });
 
-    ctx.ui.notify(outcome.run.exitCode === 0 ? `Plannator ${workflow} finished.` : `Plannator ${workflow} failed (exit ${outcome.run.exitCode}).`, outcome.run.exitCode === 0 ? "info" : "warning");
+    ctx.ui.notify(outcome.run.exitCode === 0 ? `Archon ${workflow} finished.` : `Archon ${workflow} failed (exit ${outcome.run.exitCode}).`, outcome.run.exitCode === 0 ? "info" : "warning");
   } catch (error) {
     const message = normalizeError(error);
-    emitPlan(pi, formatCommandErrorOutput(workflow, query, message), { workflow, query, error: message });
-    ctx.ui.notify(`Plannator ${workflow} failed: ${message}`, "error");
+    emitArchonMessage(pi, formatCommandErrorOutput(workflow, query, message), { workflow, query, error: message, pill: toPillLabel(workflow) });
+    ctx.ui.notify(`Archon ${workflow} failed: ${message}`, "error");
   }
 }

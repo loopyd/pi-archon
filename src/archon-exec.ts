@@ -2,7 +2,7 @@ import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
 import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import { ARCHON_ROOT, EXEC_TIMEOUT_MS, PROGRESS_UPDATE_MS } from "./constants";
-import type { ArchonRunResult } from "./types";
+import type { ArchonRunResult, ArchonToolUpdate } from "./types";
 import { formatElapsed, hasFlag, maybeString } from "./helpers";
 import { redactSecrets, safeCode, truncateOutputBlock } from "./output-filter";
 
@@ -161,7 +161,7 @@ export async function runArchonCommandWithToolUpdates(
   commandArgs: string[],
   cwd: string,
   signal: AbortSignal | undefined,
-  onUpdate: ((update: any) => void) | undefined,
+  onUpdate: ((update: ArchonToolUpdate) => void) | undefined,
   label: string,
   details: Record<string, unknown>
 ): Promise<{ run: ArchonRunResult; durationMs: number }> {

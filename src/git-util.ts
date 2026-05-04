@@ -3,7 +3,9 @@ import * as fs from "node:fs";
 import { basename } from "node:path";
 import type { CleanupSubmoduleEntry, CleanupWorktreeEntry, FeatureBranchCandidate, GitExecResult, StaleRemoteRef, SubmoduleAuditResult, SubmoduleInfo } from "./types";
 import { OWNED_ORG_PREFIXES } from "./constants";
-import { isPidRunning, resolveArchonHome, shellQuote } from "./helpers";
+import { resolveArchonHome } from "./config";
+import { shellQuote } from "./helpers";
+import { isPidRunning } from "./runtime-util";
 
 // ─── Safe git execution wrapper ─────────────────────────────
 
@@ -350,10 +352,10 @@ export async function auditAllSubmoduleRefs(
         skipped = [];
         for (const staleRef of refs) {
           const apiResult = await pi.exec("gh", ["api", `repos/${orgRepo}/git/ref/heads/${staleRef.branch}`, "--method", "DELETE"], { cwd: projectCwd, timeout: 15000 });
-          const stdout = apiResult.stdout ?? "";
-          if ((apiResult.code ?? 0) === 0 || !stdout.includes("BranchProtectionRule") || !stdout.includes("denied")) {
+          const output = `${apiResult.stdout ?? ""}\n${apiResult.stderr ?? ""}`;
+          if ((apiResult.code ?? 0) === 0) {
             remoteDeleted.push(staleRef.branch);
-          } else {
+          } else if (output.includes("BranchProtectionRule") && output.includes("denied")) {
             skipped.push(staleRef.branch);
           }
         }

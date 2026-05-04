@@ -1,6 +1,10 @@
 import type { ExtensionAPI } from "@mariozechner/pi-coding-agent";
-import * as fs from "node:fs";
-import { ARCHON_DEFAULT_HOME, ARCHON_ROOT } from "./constants";
+import type { ArchonMessageDetails } from "./types";
+import { ARCHON_PILL_DEFAULT, ARCHON_TITLE } from "./constants";
+
+interface TextContentPart {
+  text?: string;
+}
 
 
 export function normalizeString(value: unknown): string {
@@ -12,30 +16,9 @@ export function normalizeString(value: unknown): string {
   return out;
 }
 
-export function readPidFile(pidFile: string): string | undefined {
-  if (!fs.existsSync(pidFile)) return undefined;
-  const pid = fs.readFileSync(pidFile, "utf8").trim();
-  return /^\d+$/.test(pid) ? pid : undefined;
-}
-
-export function isPidRunning(pid: string): boolean {
-  const value = Number(pid);
-  if (!Number.isInteger(value) || value <= 0) return false;
-  try {
-    process.kill(value, 0);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 export function maybeString(value: unknown): string | undefined {
   const v = normalizeString(value);
   return v.length > 0 ? v : undefined;
-}
-
-export function boolOrDefault(value: unknown, fallback: boolean): boolean {
-  return typeof value === "boolean" ? value : fallback;
 }
 
 export function shellQuote(value: string): string {
@@ -50,7 +33,7 @@ export function contentToText(content: unknown): string {
   if (typeof content === "string") return content;
   if (Array.isArray(content)) {
     return content
-      .map((part: any) => {
+      .map((part: TextContentPart | string) => {
         if (typeof part === "string") return part;
         if (typeof part?.text === "string") return part.text;
         return "";
@@ -111,21 +94,6 @@ export function splitArgs(input: string): string[] {
   return out;
 }
 
-export function resolveArchonHome(projectCwd?: string): string {
-  // Project-level .archon takes priority when a project root is supplied
-  if (projectCwd) {
-    const projectArchon = `${projectCwd}/.archon`;
-    if (fs.existsSync(projectArchon)) return projectArchon;
-  }
-  const envPath = `${ARCHON_ROOT}/.env`;
-  if (fs.existsSync(envPath)) {
-    const raw = fs.readFileSync(envPath, "utf8");
-    const match = raw.match(/^ARCHON_HOME=(.+)$/m);
-    const value = maybeString(match?.[1]);
-    if (value) return value;
-  }
-  return maybeString(process.env.ARCHON_HOME) ?? ARCHON_DEFAULT_HOME;
-}
 
 export function levelTag(level: number): string {
   if (level >= 50) return "ERR";
@@ -152,7 +120,23 @@ export function normalizeError(error: unknown): string {
  *   emitArchon(pi, content);
  */
 export function createMessageEmitter(customType: string) {
-  return (pi: ExtensionAPI, content: string, details?: Record<string, unknown>) => {
+  return (pi: ExtensionAPI, content: string, details?: ArchonMessageDetails) => {
     pi.sendMessage({ customType, content, display: true, details });
   };
+}
+
+export const emitArchonMessage = createMessageEmitter("archon");
+
+export function toPillLabel(value?: string): string {
+  const text = value?.trim();
+  if (!text) return ARCHON_PILL_DEFAULT;
+  return text.toUpperCase();
+}
+
+export function formatToolTextResult(text: string, details?: Record<string, unknown>) {
+  return { content: [{ type: "text", text }], details };
+}
+
+export function formatArchonMessage(...lines: string[]): string {
+  return [ARCHON_TITLE, "", ...lines].join("\n");
 }

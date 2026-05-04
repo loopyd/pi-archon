@@ -56,6 +56,7 @@ async function execCore(
     let outCarry = "";
     let errCarry = "";
     let timedOut = false;
+    let settled = false;
 
     const timeout = setTimeout(() => {
       timedOut = true;
@@ -70,13 +71,33 @@ async function execCore(
     };
 
     const pump = (chunk: string, isErr: boolean) => {
-      const carry = isErr ? errCarry : outCarry;
-      const combined = carry + chunk.replace(/\r\n?/g, "\n");
+      // Flush any pending carry from the previous chunk so partial tokens
+      // appear progressively instead of waiting for a trailing newline.
+      if (isErr && errCarry) { flushLine(errCarry, true); errCarry = ""; }
+      if (!isErr && outCarry) { flushLine(outCarry, false); outCarry = ""; }
+
+      const combined = chunk.replace(/\r\n?/g, "\n");
       const parts = combined.split("\n");
       const nextCarry = parts.pop() ?? "";
       for (const line of parts) flushLine(line, isErr);
       if (isErr) errCarry = nextCarry;
       else outCarry = nextCarry;
+    };
+
+    const finalize = (code: number | null) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      opts?.signal?.removeEventListener("abort", onAbort);
+      if (outCarry) flushLine(outCarry, false);
+      if (errCarry) flushLine(errCarry, true);
+      if (timedOut) stderr += `\nCommand timed out after ${Math.floor(EXEC_TIMEOUT_MS / 1000)}s.`;
+      resolve({
+        command: `${inv.command} ${inv.args.join(" ")}`,
+        stdout,
+        stderr,
+        exitCode: timedOut ? 124 : (code ?? 0),
+      });
     };
 
     const onAbort = () => {
@@ -87,6 +108,8 @@ async function execCore(
     if (opts?.signal) opts.signal.addEventListener("abort", onAbort, { once: true });
 
     child.on("error", (error) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timeout);
       opts?.signal?.removeEventListener("abort", onAbort);
       reject(error);
@@ -104,18 +127,12 @@ async function execCore(
       pump(text, true);
     });
 
+    child.on("exit", (code) => {
+      finalize(code);
+    });
+
     child.on("close", (code) => {
-      clearTimeout(timeout);
-      opts?.signal?.removeEventListener("abort", onAbort);
-      if (outCarry) flushLine(outCarry, false);
-      if (errCarry) flushLine(errCarry, true);
-      if (timedOut) stderr += `\nCommand timed out after ${Math.floor(EXEC_TIMEOUT_MS / 1000)}s.`;
-      resolve({
-        command: `${inv.command} ${inv.args.join(" ")}`,
-        stdout,
-        stderr,
-        exitCode: timedOut ? 124 : (code ?? 0),
-      });
+      finalize(code);
     });
   });
 }

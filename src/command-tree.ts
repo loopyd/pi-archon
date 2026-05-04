@@ -4,7 +4,7 @@ import type { CommandNode, SubCommandMeta, CommandGroupMeta } from "./command-ba
 import { DEFAULT_QUERY } from "./constants";
 import { createMessageEmitter, maybeString, normalizeError, normalizeString } from "./helpers";
 import { handleWorkflowCommand } from "./archon-workflow-cmd";
-import { handleArchonStatusCommand } from "./archon-routes";
+import { handleArchonStatusCommand, handleArchonWorkflowCancelCommand } from "./archon-routes";
 import { handleArchonWebCommand } from "./archon-web-dev";
 import { handleArchonServerCommand } from "./archon-server-dev";
 import { handleArchonCleanupCommand, handleArchonSyncSubmodulesCommand } from "./archon-cleanup-pipeline";
@@ -23,9 +23,9 @@ abstract class PlanCmd extends ArchonCommand {
     args: [{ name: "query", required: true, description: "Task description" }],
     examples: ["/archon workflow plan refactor auth module"],
   };
-  async execute(_pi: ExtensionAPI, args: string[], ctx: ExtensionCommandContext): Promise<void> {
+  async execute(pi: ExtensionAPI, args: string[], ctx: ExtensionCommandContext): Promise<void> {
     const query = maybeString(args.join(" ").trim()) || DEFAULT_QUERY;
-    await handleWorkflowCommand({} as ExtensionAPI, "plan", query, ctx);
+    await handleWorkflowCommand(pi, "plan", query, ctx);
   }
 }
 
@@ -37,9 +37,9 @@ abstract class ImplementCmd extends ArchonCommand {
     args: [{ name: "query", required: false, description: "Optional query override" }],
     examples: ["/archon workflow implement fix memory leak in renderer"],
   };
-  async execute(_pi: ExtensionAPI, args: string[], ctx: ExtensionCommandContext): Promise<void> {
+  async execute(pi: ExtensionAPI, args: string[], ctx: ExtensionCommandContext): Promise<void> {
     const query = maybeString(args.join(" ").trim()) || DEFAULT_QUERY;
-    await handleWorkflowCommand({} as ExtensionAPI, "implement", query, ctx);
+    await handleWorkflowCommand(pi, "implement", query, ctx);
   }
 }
 
@@ -51,9 +51,9 @@ abstract class ValidateCmd extends ArchonCommand {
     args: [{ name: "query", required: false, description: "Optional query override" }],
     examples: ["/archon workflow validate check diff against binary"],
   };
-  async execute(_pi: ExtensionAPI, args: string[], ctx: ExtensionCommandContext): Promise<void> {
+  async execute(pi: ExtensionAPI, args: string[], ctx: ExtensionCommandContext): Promise<void> {
     const query = maybeString(args.join(" ").trim()) || DEFAULT_QUERY;
-    await handleWorkflowCommand({} as ExtensionAPI, "validate", query, ctx);
+    await handleWorkflowCommand(pi, "validate", query, ctx);
   }
 }
 
@@ -66,6 +66,25 @@ abstract class StatusCmd extends ArchonCommand {
   };
   async execute(pi: ExtensionAPI, _args: string[], ctx: ExtensionCommandContext): Promise<void> {
     await handleArchonStatusCommand(pi, ctx);
+  }
+}
+
+abstract class CancelWorkflowCmd extends ArchonCommand {
+  static override meta: SubCommandMeta = {
+    name: "cancel",
+    aliases: ["abandon"],
+    description: "Cancel active Archon workflow run by id.",
+    category: "Management",
+    args: [{ name: "runId", required: true, description: "Workflow run id" }],
+    examples: ["/archon manage cancel 9c448e6d", "/archon manage abandon 9c448e6d"],
+  };
+  async execute(pi: ExtensionAPI, args: string[], ctx: ExtensionCommandContext): Promise<void> {
+    const runId = maybeString(args.join(" ").trim());
+    if (!runId) {
+      emitArchon(pi, "## Archon\n\n- **Missing run id**\n\n```bash\n/archon manage cancel <runId>\n```");
+      return;
+    }
+    await handleArchonWorkflowCancelCommand(pi, runId, ctx);
   }
 }
 
@@ -194,7 +213,7 @@ const managementGroup: CommandGroupMeta = {
   aliases: ["management", "status", "cleanup", "clean", "sync-submodules"],
   description: "Project status, cleanup, and submodule maintenance.",
   category: "Management",
-  children: [StatusCmd.meta, CleanupCmd.meta, SyncSubmodulesCmd.meta],
+  children: [StatusCmd.meta, CancelWorkflowCmd.meta, CleanupCmd.meta, SyncSubmodulesCmd.meta],
 };
 
 const serverGroup: CommandGroupMeta = {
@@ -303,6 +322,7 @@ const handlers = new Map<string, InstanceType<typeof ArchonCommand>>([
   ["workflow:implement", new (class extends ImplementCmd {})()],
   ["workflow:validate",  new (class extends ValidateCmd {})()],
   ["manage:status",      new (class extends StatusCmd {})()],
+  ["manage:cancel",      new (class extends CancelWorkflowCmd {})()],
   ["manage:cleanup",     new (class extends CleanupCmd {})()],
   ["manage:sync-submodules", new (class extends SyncSubmodulesCmd {})()],
   ["server:start",       new (class extends ServerStartCmd {})()],

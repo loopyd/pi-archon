@@ -143,7 +143,12 @@ export async function handleWorkflowCommand(
 
     if (!outcome.run) throw new Error(outcome.error || "Workflow did not return a result.");
 
-    emitPlan(pi, formatArchonOutput(`${workflow.toUpperCase()} — ${redactSecrets(query)}`, outcome.run, outcome.durationMs), {
+    // Strip archon's own log lines from emitted output (they leak via sendMessage during execution)
+    const cleaned = formatArchonOutput(`${workflow.toUpperCase()} — ${redactSecrets(query)}`, outcome.run, outcome.durationMs)
+      .split('\n')
+      .filter(l => !/^\[(?:INF|WRN)\] /m.test(l))
+      .join('\n');
+    emitPlan(pi, cleaned, {
       workflow, query, exitCode: outcome.run.exitCode, command: outcome.run.command, durationMs: outcome.durationMs,
     });
 

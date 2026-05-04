@@ -3,30 +3,158 @@ import { Type } from "typebox";
 import * as fs from "node:fs";
 import { ARCHON_ROOT, DEFAULT_QUERY } from "./constants";
 import type { WorkflowName } from "./types";
-import { createMessageEmitter, normalizeString } from "./helpers";
+import { createMessageEmitter, formatElapsed, normalizeString } from "./helpers";
 import { redactSecrets, safeCode } from "./output-filter";
 import { formatArchonToolResult, runArchonCommand } from "./archon-exec";
 import { handleWorkflowCommand } from "./archon-workflow-cmd";
-// ─── Status subcommand (inlined from archon-status.ts) ─────────
+// ─── Status subcommand (workflow-aware) ─────────
+
+type ArchonWorkflowStatusRow = {
+  id: string;
+  workflow_name: string;
+  working_path?: string | null;
+  status: string;
+  started_at: string;
+};
+
+type ArchonWorkflowStatusJson = {
+  runs: ArchonWorkflowStatusRow[];
+};
+
+function extractJsonObjects(raw: string): string[] {
+  const objects: string[] = [];
+  let start = -1;
+  let depth = 0;
+  let inString = false;
+  let escaping = false;
+
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+
+    if (inString) {
+      if (escaping) {
+        escaping = false;
+        continue;
+      }
+      if (ch === "\\") {
+        escaping = true;
+        continue;
+      }
+      if (ch === '"') inString = false;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      continue;
+    }
+
+    if (ch === "{") {
+      if (depth === 0) start = i;
+      depth += 1;
+      continue;
+    }
+
+    if (ch === "}") {
+      if (depth > 0) depth -= 1;
+      if (depth === 0 && start >= 0) {
+        objects.push(raw.slice(start, i + 1));
+        start = -1;
+      }
+    }
+  }
+
+  return objects;
+}
+
+function parseWorkflowStatusJson(rawOut: string, rawErr: string): ArchonWorkflowStatusJson {
+  const combined = [rawOut, rawErr].filter(Boolean).join("\n");
+  const jsonObjects = extractJsonObjects(combined);
+  if (jsonObjects.length === 0) throw new Error("No JSON payload found in workflow status output.");
+  for (const jsonBlock of jsonObjects) {
+    try {
+      const parsed = JSON.parse(jsonBlock) as ArchonWorkflowStatusJson;
+      if (parsed && Array.isArray(parsed.runs)) return parsed;
+    } catch { /* keep scanning */ }
+  }
+  throw new Error("Malformed workflow status JSON (missing runs array).");
+}
+
+function formatAge(startedAt: string): string {
+  const parsed = new Date(startedAt.endsWith("Z") ? startedAt : `${startedAt}Z`);
+  if (Number.isNaN(parsed.getTime())) return "unknown";
+  return formatElapsed(Math.floor((Date.now() - parsed.getTime()) / 1000));
+}
+
+function renderWorkflowStatus(projectRoot: string, runs: ArchonWorkflowStatusRow[]): string {
+  const localRuns = runs.filter((run) => (run.working_path ?? "") === projectRoot);
+  const lines: string[] = [
+    "## Archon workflow status",
+    "",
+    `- **Project:** \`${safeCode(projectRoot)}\``,
+    `- **Archon root:** \`${safeCode(ARCHON_ROOT)}\` ${fs.existsSync(`${ARCHON_ROOT}/package.json`) ? "(found)" : "(missing)"}`,
+    `- **Active runs:** ${runs.length}`,
+    `- **On this path:** ${localRuns.length}`,
+    "",
+  ];
+
+  if (runs.length === 0) {
+    lines.push("No active workflows.", "");
+    return lines.join("\n");
+  }
+
+  lines.push("### Runs", "");
+  for (const run of runs) {
+    const here = (run.working_path ?? "") === projectRoot ? " **(this path)**" : "";
+    lines.push(`- \`${run.id}\` — **${safeCode(run.workflow_name)}** · ${safeCode(run.status)} · age ${formatAge(run.started_at)}${here}`);
+    lines.push(`  - path: \`${safeCode(run.working_path ?? "(none)")}\``);
+    lines.push(`  - cancel: \`/archon manage cancel ${safeCode(run.id)}\``);
+  }
+  lines.push("");
+  return lines.join("\n");
+}
 
 export async function handleArchonStatusCommand(pi: ExtensionAPI, ctx: ExtensionCommandContext): Promise<void> {
   const projectRoot = ctx.cwd || process.cwd();
-  const workflowDir = `${projectRoot}/.archon/workflows`;
-  const agentDir = `${projectRoot}/.pi/agents`;
-  const workflows = fs.existsSync(workflowDir)
-    ? fs.readdirSync(workflowDir).filter((f) => f.endsWith(".yaml")).sort()
-    : [];
-  const agents = fs.existsSync(agentDir)
-    ? fs.readdirSync(agentDir).filter((f) => f.endsWith(".md")).sort()
-    : [];
-  emitArchon(
-    pi,
-    ["Archon status", "─────────────", `Project: ${projectRoot}`,
-      `Archon root: ${ARCHON_ROOT} ${fs.existsSync(`${ARCHON_ROOT}/package.json`) ? "(found)" : "(missing)"}`,
-      `Workflows: ${workflows.length ? workflows.join(", ") : "none"}`,
-      `Agents: ${agents.length ? agents.map((a) => a.replace(/\.md$/, "")).join(", ") : "none"}`
-    ].join("\n")
-  );
+  try {
+    const run = await runArchonCommand(pi, ["workflow", "status", "--json"], projectRoot);
+    if (run.exitCode !== 0) throw new Error(run.stderr || run.stdout || `exit ${run.exitCode}`);
+    const parsed = parseWorkflowStatusJson(run.stdout || "", run.stderr || "");
+    emitArchon(pi, renderWorkflowStatus(projectRoot, parsed.runs ?? []), { action: "workflow_status", runs: parsed.runs?.length ?? 0 });
+  } catch (error) {
+    const workflowDir = `${projectRoot}/.archon/workflows`;
+    const agentDir = `${projectRoot}/.pi/agents`;
+    const workflows = fs.existsSync(workflowDir)
+      ? fs.readdirSync(workflowDir).filter((f) => f.endsWith(".yaml")).sort()
+      : [];
+    const agents = fs.existsSync(agentDir)
+      ? fs.readdirSync(agentDir).filter((f) => f.endsWith(".md")).sort()
+      : [];
+    emitArchon(
+      pi,
+      ["## Archon status", "", `- **Project:** \`${safeCode(projectRoot)}\``,
+        `- **Archon root:** \`${safeCode(ARCHON_ROOT)}\` ${fs.existsSync(`${ARCHON_ROOT}/package.json`) ? "(found)" : "(missing)"}`,
+        `- **Workflows:** ${workflows.length ? workflows.map((w) => `\`${safeCode(w)}\``).join(", ") : "none"}`,
+        `- **Agents:** ${agents.length ? agents.map((a) => `\`${safeCode(a.replace(/\.md$/, ""))}\``).join(", ") : "none"}`,
+        `- **Workflow DB status:** failed to query (${safeCode(String(error instanceof Error ? error.message : error))})`,
+        ""
+      ].join("\n")
+    );
+  }
+}
+
+export async function handleArchonWorkflowCancelCommand(pi: ExtensionAPI, runId: string, ctx: ExtensionCommandContext): Promise<void> {
+  const projectRoot = ctx.cwd || process.cwd();
+  try {
+    const run = await runArchonCommand(pi, ["workflow", "abandon", runId], projectRoot);
+    if (run.exitCode !== 0) throw new Error(run.stderr || run.stdout || `exit ${run.exitCode}`);
+    emitArchon(pi, `## Archon workflow cancelled\n\n- **Run:** \`${safeCode(runId)}\`\n\n\`\`\`text\n${safeCode((run.stdout || run.stderr || "Cancelled.").trim())}\n\`\`\`\n`, { action: "workflow_cancel", runId });
+    ctx.ui.notify(`Archon workflow ${runId} cancelled.`, "info");
+  } catch (error) {
+    const message = String(error instanceof Error ? error.message : error);
+    emitArchon(pi, `## Archon workflow cancel failed\n\n- **Run:** \`${safeCode(runId)}\`\n- **Error:** ${safeCode(message)}\n`, { action: "workflow_cancel", runId, error: message });
+    ctx.ui.notify(`Archon workflow ${runId} cancel failed.`, "warning");
+  }
 }
 import { handleArchonWebCommand } from "./archon-web-dev";
 import { buildSteps, handleArchonCleanupCommand, handleArchonSyncSubmodulesCommand } from "./archon-cleanup-pipeline";
@@ -95,7 +223,7 @@ function maybeString(value: unknown): string | undefined {
 async function invokeStatus(cwd: string): Promise<{ content: Array<{ type: string; text: string }>; details?: Record<string, unknown> }> {
   const workflows = fs.existsSync(`${cwd}/.archon/workflows`) ? fs.readdirSync(`${cwd}/.archon/workflows`).filter((f) => f.endsWith(".yaml")).sort().join(", ") : "none";
   const agents = fs.existsSync(`${cwd}/.pi/agents`) ? fs.readdirSync(`${cwd}/.pi/agents`).filter((f) => f.endsWith(".md")).map((a) => a.replace(/\.md$/, "")).sort().join(", ") : "none";
-  return { content: [{ type: "text", text: ["## Archon status", "─────────────", `Project: ${cwd}`, `Archon root: ${ARCHON_ROOT} ${fs.existsSync(`${ARCHON_ROOT}/package.json`) ? "(found)" : "(missing)"}`, `Workflows: ${workflows}`, `Agents: ${agents}`].join("\n") }] as Array<{type:string;text:string;display?:boolean}>, details: { action: "status" } };
+  return { content: [{ type: "text", text: ["## Archon status", "", `- **Project:** \`${safeCode(cwd)}\``, `- **Archon root:** \`${safeCode(ARCHON_ROOT)}\` ${fs.existsSync(`${ARCHON_ROOT}/package.json`) ? "(found)" : "(missing)"}`, `- **Workflows:** ${workflows}`, `- **Agents:** ${agents}`].join("\n") }], details: { action: "status_fallback" } };
 }
 
 async function invokeCleanup(args: string[], cwd: string, verboseFlag?: boolean) {
@@ -177,6 +305,14 @@ export async function registerCliRoutes(pi: ExtensionAPI, ctx: ExtensionCommandC
   if (firstToken === "status") {
     return await handleArchonStatusCommand(pi, ctx);
   }
+  if (firstToken === "cancel" || firstToken === "abandon") {
+    const runId = tokens[1];
+    if (!runId) {
+      emitArchon(pi, "## Archon\n\n- **Missing run id**\n\n```bash\n/archon cancel <runId>\n```\n");
+      return;
+    }
+    return await handleArchonWorkflowCancelCommand(pi, runId, ctx);
+  }
 
   // Workflow dispatch via normalizer
   switch (normalizeWorkflow(firstToken)) {
@@ -202,7 +338,8 @@ function getHelpMarkdown(): string {
     "",
     "### Management",
     "",
-    "- `/archon status` — Show Archon project status.",
+    "- `/archon status` — Show active Archon workflow runs.",
+    "- `/archon cancel <runId>` — Cancel active workflow run by id.",
     "- `/archon cleanup` — Prune worktrees, stale refs, sync submodules.",
     "- `/archon clean` — Alias for cleanup.",
     "- `/archon sync-submodules` — Fetch + prune submodule remotes.",

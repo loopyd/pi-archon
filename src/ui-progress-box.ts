@@ -2,7 +2,7 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@mariozechner/pi-cod
 import { TuiBase } from "./tui-base";
 import type { LiveEventLine, TuiBaseParams } from "./types";
 import { contentToText, formatElapsed, normalizeError } from "./helpers";
-import { safeCode } from "./output-filter";
+import { ARCHON_LOG_RE, safeCode } from "./output-filter";
 
 // ════════════════════════════════════════════════════════════
 // Core types — shared across all modes
@@ -172,9 +172,13 @@ export class ProgressBox extends TuiBase {
   // the registered lineParser before storing/displaying.
   // ════════════════════════════════════════════════════════
 
+
+
   appendLine(line: string, isErr: boolean): void {
     const normalized = line.replace(/\r/g, "").trim();
     if (!normalized) return;
+    // Strip archon's own internal log lines (they leak through sendMessage during execution)
+    if (ARCHON_LOG_RE.test(normalized)) return;
 
     const event = this.formatLine(normalized, isErr);
     if (!event?.text?.trim()) return;

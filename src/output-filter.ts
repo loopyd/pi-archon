@@ -53,6 +53,16 @@ function keepPrefix(line: string): boolean {
   return PREFIX_RE.test(line.trim());
 }
 
+/** Find all ## SECTION_HEADER indices (ascending) */
+function findAllSectionHeaders(lines: string[]): number[] {
+  const headers: number[] = [];
+  for (let i = 0; i < lines.length; i++) {
+    if (/^##\s+/.test((lines[i] ?? "").trim())) headers.push(i);
+  }
+  return headers;
+}
+
+/** Find the last ## SECTION_HEADER index */
 function findFinalSection(lines: string[]): number {
   for (let i = lines.length - 1; i >= 0; i--) {
     if (/^##\s+/.test((lines[i] ?? "").trim())) return i;
@@ -117,22 +127,56 @@ function formatJsonEvent(payload: JsonPayload, baseIsErr: boolean): LiveEventLin
   return { text, isErr: baseIsErr || (typeof level === "number" && level >= DEFAULT_LEVEL_CONFIG.warn), step };
 }
 
-/** Full cleaning pipeline: normalize newlines → filter lines → preserve final section */
+/** Archon's own internal logs — strip from user-visible output. Matches:
+ *   [WRN] workflow.loader: ...
+ *   [INF] db.connection: ...
+ *   ⚠️ Tool bash failed
+ */
+export const ARCHON_LOG_RE = /^\[(?:INFO|WARN|ERR|DBG|LOG|EVT|INF|WRN)\]\s+\w+[\-.\w]*:/;
+const TOOL_WARNING_RE = /^⚠/;
+
+/** Full cleaning pipeline: normalize newlines → filter lines → preserve all sections */
 export function cleanOutput(text: string): string {
   const lines = (text || "").replace(/\r\n?/g, "\n").split("\n");
-  const finalStart = findFinalSection(lines);
 
-  if (finalStart < 0) {
-    // No structured section found — transform all lines uniformly
-    return lines.map(parseLine).filter((e) => e.text.trim()).map((e) => e.text).join("\n").trim();
+  // Collect all ## SECTION_HEADER indices so we keep every section block.
+  // Between sections only prefix-allowed content is kept; after the last
+  // section everything is preserved verbatim (user output).
+  const headers = findAllSectionHeaders(lines);
+
+  if (headers.length === 0) {
+    // No structured section found — transform all lines uniformly, strip archon logs
+    return lines
+      .filter((l) => !ARCHON_LOG_RE.test(l))
+      .map(parseLine)
+      .filter((e) => e.text.trim())
+      .map((e) => e.text)
+      .join("\n")
+      .trim();
   }
 
-  // Keep only prefix-allowed lines before the final section header
-  const prefix = lines.slice(0, finalStart)
-    .map(parseLine)
-    .filter((e) => keepPrefix(e.text));
+  const parts: string[] = [];
 
-  return [...prefix.map((e) => e.text), ...lines.slice(finalStart)].join("\n").trim();
+  // Prefix content before the first header (logs, status markers)
+  if (headers[0] > 0) {
+    const prefix = lines.slice(0, headers[0])
+      .map(parseLine)
+      .filter((e) => keepPrefix(e.text))
+      .filter((e) => !ARCHON_LOG_RE.test(e.text));
+    // Also strip archon logs that appear inline (bypassed by PREFIX_RE matching)
+    const allLines = lines.slice(0, headers[0]).map(parseLine).filter((e) => e.text.trim());
+    parts.push(...allLines.filter((e) => !ARCHON_LOG_RE.test(e.text)).map((e) => e.text));
+  }
+
+  // Each section block: from header through the next header or EOF.
+  for (let i = 0; i < headers.length; i++) {
+    const start = headers[i];
+    const end = i + 1 < headers.length ? headers[i + 1] : lines.length;
+    parts.push(...lines.slice(start, end).filter((l) => !ARCHON_LOG_RE.test(l)));
+  }
+
+  // Final sweep: strip any remaining archon log lines (they may leak from execution)
+  return parts.join("\n").trim();
 }
 
 // ════════════════════════════════════════════════════════════════

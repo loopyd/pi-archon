@@ -2,6 +2,11 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.0.8] - 2026-05-04
+
+### Fixed
+- Fixed package type import to use public `@mariozechner/pi-tui` surface instead of private `dist/tui.js` path so CI and publish workflows can typecheck on clean runners.
+
 ## [0.0.7] - 2026-05-04
 
 ### Added
@@ -37,4 +42,5 @@ All notable changes to this project will be documented in this file.
 - `0.0.3` - 2026-05-02 - https://github.com/loopyd/pi-archon/compare/v0.0.2...v0.0.3
 - `0.0.2` - 2026-05-02
 
+[0.0.8]: https://github.com/loopyd/pi-archon/compare/v0.0.7...v0.0.8
 [0.0.7]: https://github.com/loopyd/pi-archon/compare/v0.0.6...v0.0.7
